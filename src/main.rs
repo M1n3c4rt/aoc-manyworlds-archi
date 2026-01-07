@@ -198,7 +198,6 @@ impl GridState {
         let (xp,yp) = self.players[self.player];
         let (cols,rows) = size()?;
         let width = min(rows as i16,cols as i16 - offset - 1);
-        eprintln!("{width} {rows} {cols}");
         let (xs,ys) = (offset + width/2,width/2);
 
         let mut keystring = String::new();
