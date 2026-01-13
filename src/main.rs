@@ -1,4 +1,4 @@
-use archipelago_rs::{client::{ArchipelagoClient, ArchipelagoError}, protocol::{ClientStatus, Connected, ItemsHandlingFlags, NetworkItem}};
+use archipelago_rs::{client::{ArchipelagoClient, ArchipelagoError}, protocol::{ClientMessage, ClientStatus, Connected, ItemsHandlingFlags, NetworkItem, ServerMessage}};
 use crossterm::{
     self,
     cursor::{Hide, MoveTo, Show},
@@ -7,7 +7,6 @@ use crossterm::{
     style::{Color::Rgb, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{Clear, ClearType, EnterAlternateScreen, disable_raw_mode, enable_raw_mode, size},
 };
-use futures_timer::Delay;
 use rand::{
     Rng, SeedableRng, rng, seq::IndexedRandom
 };
@@ -15,7 +14,7 @@ use rand_chacha::{ChaCha8Rng};
 use serde_json::Value;
 use tokio::{ select, time::error::Elapsed};
 use std::{
-    cmp::min, collections::{HashMap, HashSet, VecDeque}, env::args, fmt::Debug, io::{ Write, stdout}, process::exit, time::Duration
+    cmp::min, collections::{HashMap, HashSet, VecDeque}, env::args, fmt::Debug, io::{ Write, stdout}, process::exit
 };
 use futures_util::{FutureExt, StreamExt};
 
@@ -125,6 +124,7 @@ async fn start_multiplayer(url : String, slot : String, password : Option<&str>)
     let mut con: ArchipelagoClient<Value> = ArchipelagoClient::new(&url).await?;
     let con_package: Connected<Value> = con.connect("Advent of Code 2019 Day 18 Part 2", &slot, password, ItemsHandlingFlags::all(), vec!["AP".to_string()]).await?;
     let _logic: HashMap<char, Vec<char>> = logic_from_connected(&con_package)?; //store here for sanity
+    eprintln!("{:?}", _logic);
     let grid = grid_from_connected(&con_package)?;
 
     let mut initstate = GridState {
@@ -149,17 +149,12 @@ async fn start_multiplayer(url : String, slot : String, password : Option<&str>)
 
     loop {
         initstate.draw()?;
-        eprintln!("here0");
 
-        let mut delay = Delay::new(Duration::from_millis(1_000)).fuse();
-        let mut event = reader.next().fuse();
-        let mut syncs = con.sync().fuse();
+        let event = reader.next().fuse();
+        let syncs = con.recv();
 
         select! {
-            biased;
-            _ = delay => {eprintln!("here-1");},
             maybe_event = event => {
-                eprintln!("here1");
                 match maybe_event {
                     Some(Ok(Event::Key(k))) => {
                         if let Some(k) = initstate.process_key(k)? {
@@ -169,14 +164,11 @@ async fn start_multiplayer(url : String, slot : String, password : Option<&str>)
                     _ => {},
                 }
             },
-            items = syncs => {
-                eprintln!("here2");
-                let is = items?.items;
+            Ok(Some(ServerMessage::ReceivedItems(items))) = syncs => {
+                let is = items.items;
                 initstate.add_items(is)?;
-                eprintln!("here3");
             }
         };
-        eprintln!("here4");
         //if let Some(ServerMessage::Print(msg)) = con.recv().await? {
         //    initstate.msgs.pop_front();
         //    initstate.msgs.push_back(msg.text);
@@ -590,7 +582,6 @@ impl GridState {
             KeyCode::Char('c') => {
                 self.player += 1;
                 self.player %= 4;
-                eprintln!("here?");
                 Ok(None)
             }
             KeyCode::Char('w') | KeyCode::Up => self.move_player(0, -1),
