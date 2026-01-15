@@ -2,7 +2,8 @@ use archipelago_rs::{
     client::{ArchipelagoClient, ArchipelagoError},
     protocol::{
         ClientMessage, ClientStatus, Connected, DataStorageOperation, Get, ItemsHandlingFlags,
-        NetworkItem, Retrieved, ServerMessage, Set,
+        NetworkItem, NetworkItemFlags, Retrieved, RichMessageColor, RichMessagePart, RichPrint,
+        ServerMessage, Set,
     },
 };
 use crossterm::{
@@ -10,7 +11,10 @@ use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::{Event, EventStream, KeyCode, KeyEvent, read},
     execute, queue,
-    style::{Color::Rgb, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
+    style::{
+        Color::{self, Rgb},
+        Print, ResetColor, SetBackgroundColor, SetForegroundColor,
+    },
     terminal::{
         Clear, ClearType, DisableLineWrap, EnterAlternateScreen, disable_raw_mode, enable_raw_mode,
         size,
@@ -21,12 +25,13 @@ use rand::{Rng, SeedableRng, rng, seq::IndexedRandom};
 use rand_chacha::ChaCha8Rng;
 use serde_json::{Value, json};
 use std::{
-    cmp::min,
     collections::{HashMap, HashSet, VecDeque},
     env::args,
     fmt::Debug,
     io::{Write, stdout},
+    iter::repeat_n,
     process::exit,
+    sync::Arc,
 };
 use tokio::{select, time::error::Elapsed};
 
@@ -122,14 +127,14 @@ impl From<Elapsed> for StrError {
     }
 }
 
-fn start_singleplayer(seed: u64) -> std::io::Result<()> {
+fn start_singleplayer(seed: u64) -> Result<(), StrError> {
     let (grid, _logic) = Grid::generate_grid(seed);
     let mut initstate = GridState {
         grid,
         player: 0,
         players: [(39, 39), (41, 39), (39, 41), (41, 41)],
         keys: HashSet::new(),
-        msgs: [const { String::new() }; 5].into(),
+        msgs: repeat_n(RichPrint::message(String::new()), 5).collect(),
         finished: false,
     };
 
@@ -137,12 +142,12 @@ fn start_singleplayer(seed: u64) -> std::io::Result<()> {
     execute!(
         stdout(),
         EnterAlternateScreen,
-        SetBackgroundColor(Rgb { r: 0, b: 0, g: 0 }),
+        SetBackgroundColor(Rgb { r: 0, g: 0, b: 0 }),
         Clear(ClearType::All),
         Hide,
     )?;
     loop {
-        initstate.draw()?;
+        initstate.draw(&"???".to_string())?;
         match read()? {
             Event::Key(k) => {
                 if let Some(k) = initstate.process_key(k)? {
@@ -165,57 +170,11 @@ async fn start_multiplayer(
 ) -> Result<(), StrError> {
     let mut con: ArchipelagoClient<Value> = match ArchipelagoClient::new(&url).await {
         Ok(c) => c,
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::ConnectionClosed)) => {
-            eprintln!("connection closed");
-            exit(1)
+        Err(ArchipelagoError::NetworkError(e)) => {
+            descriptive_network_error(e);
         }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::AlreadyClosed)) => {
-            eprintln!("already closed");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::Io(e))) => {
-            eprintln!("io: {e}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::Tls(e))) => {
-            eprintln!("tls: {e}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::Capacity(e))) => {
-            eprintln!("capacity: {e}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::Protocol(e))) => {
-            eprintln!("protocol: {e}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::WriteBufferFull(e))) => {
-            eprintln!("write buffer full: {e}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::Utf8(e))) => {
-            eprintln!("utf-8: {e}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::AttackAttempt)) => {
-            eprintln!("attack attempt");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::Url(e))) => {
-            eprintln!("url error: {e}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::Http(e))) => {
-            eprintln!("http error: {e:?}");
-            exit(1)
-        }
-        Err(ArchipelagoError::NetworkError(tungstenite::Error::HttpFormat(e))) => {
-            eprintln!("http format error: {e}");
-            exit(1)
-        }
-        _ => {
-            eprintln!("unknown network error");
-            exit(1)
+        Err(e) => {
+            return Err(StrError::from(e));
         }
     };
     con = ArchipelagoClient::with_data_package(&url, Some(con.room_info().games.clone())).await?;
@@ -266,7 +225,7 @@ async fn start_multiplayer(
         player: 0,
         players: [(39, 39), (41, 39), (39, 41), (41, 41)],
         keys: HashSet::new(),
-        msgs: [const { String::new() }; 5].into(),
+        msgs: repeat_n(RichPrint::message(String::new()), 5).collect(),
         finished: false,
     };
 
@@ -274,7 +233,7 @@ async fn start_multiplayer(
     execute!(
         stdout(),
         EnterAlternateScreen,
-        SetBackgroundColor(Rgb { r: 0, b: 0, g: 0 }),
+        SetBackgroundColor(Rgb { r: 0, g: 0, b: 0 }),
         Clear(ClearType::All),
         DisableLineWrap,
         Hide,
@@ -286,7 +245,7 @@ async fn start_multiplayer(
 
     loop {
         if keysretrieved && playersretrieved {
-            initstate.draw()?;
+            initstate.draw(&slot)?;
         }
 
         let event = reader.next().fuse();
@@ -319,12 +278,12 @@ async fn start_multiplayer(
                     },
                     Ok(Some(ServerMessage::Print(msg))) => {
                         initstate.msgs.pop_front();
-                        initstate.msgs.push_back(msg.text);
+                        initstate.msgs.push_back(RichPrint::message(msg.text));
                     },
                     Ok(Some(ServerMessage::RichPrint(mut msg))) => {
                         initstate.msgs.pop_front();
                         msg.add_names(&con_package, &data_package);
-                        initstate.msgs.push_back(format!("{}",msg));
+                        initstate.msgs.push_back(msg);
                     },
                     Ok(Some(ServerMessage::Retrieved(items))) => {
                         if let Ok(keys) = keystring_from_storage(&value_from_singleton(&items)?) {
@@ -332,10 +291,9 @@ async fn start_multiplayer(
                             keysretrieved = true;
                         }
                         if let Ok(players) = players_from_storage(&value_from_singleton(&items)?) {
-                            initstate.remove_cell(Cell::Player(0));
-                            initstate.remove_cell(Cell::Player(1));
-                            initstate.remove_cell(Cell::Player(2));
-                            initstate.remove_cell(Cell::Player(3));
+                            for i in 0..4 {
+                                initstate.remove_cell(Cell::Player(i));
+                            }
                             initstate.players = players;
                             for ((x,y),n) in initstate.players.iter().zip(0..4) {
                                 initstate.grid.cart[*y as usize][*x as usize] = Cell::Player(n);
@@ -558,6 +516,180 @@ fn value_from_singleton(storage: &Retrieved) -> Result<Value, ArchipelagoError> 
         .cloned()
 }
 
+fn descriptive_network_error(err: tungstenite::Error) -> ! {
+    match err {
+        tungstenite::Error::ConnectionClosed => {
+            eprintln!("connection closed");
+            exit(1)
+        }
+        tungstenite::Error::AlreadyClosed => {
+            eprintln!("already closed");
+            exit(1)
+        }
+        tungstenite::Error::Io(e) => {
+            eprintln!("io: {e}");
+            exit(1)
+        }
+        tungstenite::Error::Tls(e) => {
+            eprintln!("tls: {e}");
+            exit(1)
+        }
+        tungstenite::Error::Capacity(e) => {
+            eprintln!("capacity: {e}");
+            exit(1)
+        }
+        tungstenite::Error::Protocol(e) => {
+            eprintln!("protocol: {e}");
+            exit(1)
+        }
+        tungstenite::Error::WriteBufferFull(e) => {
+            eprintln!("write buffer full: {e}");
+            exit(1)
+        }
+        tungstenite::Error::Utf8(e) => {
+            eprintln!("utf-8: {e}");
+            exit(1)
+        }
+        tungstenite::Error::AttackAttempt => {
+            eprintln!("attack attempt");
+            exit(1)
+        }
+        tungstenite::Error::Url(e) => {
+            eprintln!("url error: {e}");
+            exit(1)
+        }
+        tungstenite::Error::Http(e) => {
+            eprintln!("http error: {e:?}");
+            exit(1)
+        }
+        tungstenite::Error::HttpFormat(e) => {
+            eprintln!("http format error: {e}");
+            exit(1)
+        }
+    };
+}
+
+fn rich_print(slot: &String, msg: RichPrint) -> Result<(), StrError> {
+    fn col_from_flags(flags: &NetworkItemFlags) -> Color {
+        if flags.contains(NetworkItemFlags::PROGRESSION) {
+            Rgb {
+                r: 175,
+                g: 153,
+                b: 239,
+            }
+        } else if flags.contains(NetworkItemFlags::USEFUL) {
+            Rgb {
+                r: 109,
+                g: 139,
+                b: 232,
+            }
+        } else if flags.contains(NetworkItemFlags::TRAP) {
+            Rgb {
+                r: 250,
+                g: 128,
+                b: 114,
+            }
+        } else {
+            Color::Cyan
+        }
+    }
+
+    for part in msg.data() {
+        match part {
+            RichMessagePart::PlayerId { id: _, name } => {
+                let name = name.clone().unwrap_or(Arc::new("???".to_string()));
+                execute!(
+                    stdout(),
+                    SetForegroundColor(if name == Arc::new(slot.clone()) {
+                        Color::Magenta
+                    } else {
+                        Color::Yellow
+                    }),
+                    Print(name),
+                )?;
+            }
+            RichMessagePart::PlayerName { text } => {
+                let name = text;
+                execute!(
+                    stdout(),
+                    SetForegroundColor(if name == slot {
+                        Color::Magenta
+                    } else {
+                        Color::Yellow
+                    }),
+                    Print(name),
+                )?;
+            }
+            RichMessagePart::ItemId {
+                id: _,
+                flags,
+                player: _,
+                name,
+            } => {
+                let name = name.clone().unwrap_or(Arc::new("???".to_string()));
+                execute!(
+                    stdout(),
+                    SetForegroundColor(col_from_flags(flags)),
+                    Print(name),
+                )?;
+            }
+            RichMessagePart::ItemName {
+                text,
+                flags,
+                player: _,
+            } => {
+                let name = text;
+                execute!(
+                    stdout(),
+                    SetForegroundColor(col_from_flags(flags)),
+                    Print(name),
+                )?;
+            }
+            RichMessagePart::LocationId {
+                id: _,
+                player: _,
+                name,
+            } => {
+                let name = name.clone().unwrap_or(Arc::new("???".to_string()));
+                execute!(stdout(), SetForegroundColor(Color::Green), Print(name),)?;
+            }
+            RichMessagePart::LocationName { text, player: _ } => {
+                let name = text;
+                execute!(stdout(), SetForegroundColor(Color::Green), Print(name),)?;
+            }
+            RichMessagePart::EntranceName { text } => {
+                let name = text;
+                execute!(stdout(), SetForegroundColor(Color::Blue), Print(name),)?;
+            }
+            RichMessagePart::Color { text, color } => {
+                execute!(
+                    stdout(),
+                    SetForegroundColor(match color {
+                        RichMessageColor::Red => Color::Red,
+                        RichMessageColor::Green => Color::Green,
+                        RichMessageColor::Yellow => Color::Yellow,
+                        RichMessageColor::Blue => Color::Blue,
+                        RichMessageColor::Magenta => Color::Magenta,
+                        RichMessageColor::Cyan => Color::Cyan,
+                        _ => Color::White,
+                    }),
+                    Print(text),
+                )?;
+            }
+            RichMessagePart::Text { text } => {
+                execute!(
+                    stdout(),
+                    ResetColor,
+                    SetBackgroundColor(Rgb { r: 0, g: 0, b: 0 }),
+                    Print(text)
+                )?;
+            }
+        }
+    }
+    execute!(stdout(), Print(" ".repeat((2000) as usize)),)?;
+    Ok(())
+}
+
 #[derive(Clone, Debug, PartialEq, Copy)]
 enum Cell {
     Wall,
@@ -757,17 +889,18 @@ struct GridState {
     player: usize,
     players: [(i16, i16); 4],
     keys: HashSet<char>,
-    msgs: VecDeque<String>,
+    msgs: VecDeque<RichPrint>,
     finished: bool,
 }
 
 impl GridState {
-    fn draw(&self) -> std::io::Result<()> {
+    fn draw(&self, slot: &String) -> Result<(), StrError> {
         let offset = 27;
         let (xp, yp) = self.players[self.player];
         let (cols, rows) = size()?;
-        let width = min(rows as i16 - 6, cols as i16 - offset - 1);
-        let (xs, ys) = (offset + width / 2, width / 2);
+        let width = cols as i16 - offset - 1;
+        let height = rows as i16 - 6;
+        let (xs, ys) = (offset + width / 2, height / 2);
 
         let mut keystring = String::new();
         for c in 'a'..='z' {
@@ -777,7 +910,6 @@ impl GridState {
         execute!(
             stdout(),
             ResetColor,
-            Clear(ClearType::All),
             SetBackgroundColor(Rgb { r: 0, g: 0, b: 0 }),
             MoveTo(0, 0),
             Print("[wasd]/arrows to move"),
@@ -804,17 +936,20 @@ impl GridState {
             Print(keystring),
             ResetColor,
             SetBackgroundColor(Rgb { r: 0, g: 0, b: 0 }),
-            MoveTo(0, width as u16),
-            Print(self.msgs[0].clone()),
-            MoveTo(0, width as u16 + 1),
-            Print(self.msgs[1].clone()),
-            MoveTo(0, width as u16 + 2),
-            Print(self.msgs[2].clone()),
-            MoveTo(0, width as u16 + 3),
-            Print(self.msgs[3].clone()),
-            MoveTo(0, width as u16 + 4),
-            Print(self.msgs[4].clone()),
-            MoveTo(0, width as u16 + 5),
+            MoveTo(0, height as u16),
+        )?;
+        rich_print(slot, self.msgs[0].clone())?;
+        execute!(stdout(), MoveTo(0, height as u16 + 1))?;
+        rich_print(slot, self.msgs[1].clone())?;
+        execute!(stdout(), MoveTo(0, height as u16 + 2))?;
+        rich_print(slot, self.msgs[2].clone())?;
+        execute!(stdout(), MoveTo(0, height as u16 + 3))?;
+        rich_print(slot, self.msgs[3].clone())?;
+        execute!(stdout(), MoveTo(0, height as u16 + 4))?;
+        rich_print(slot, self.msgs[4].clone())?;
+        execute!(
+            stdout(),
+            MoveTo(0, height as u16 + 5),
             SetForegroundColor(if self.finished {
                 Rgb {
                     r: 235,
@@ -835,10 +970,11 @@ impl GridState {
             })
         )?;
 
-        for y in 0..width {
+        for y in 0..height {
             for x in offset..offset + width {
-                let distfactor: f64 =
-                    (((x - xs) as f64).powf(2.0) + ((y - ys) as f64).powf(2.0)).clamp(1.0, 255.0);
+                let distfactor: f64 = (((x - xs) as f64).powf(2.0)
+                    + ((2 * y - 2 * ys) as f64).powf(2.0))
+                .clamp(1.0, 255.0);
                 let k: f64 = 3.9;
                 let col_from = |n: f64| Rgb {
                     r: (k * n / distfactor) as u8,
@@ -846,15 +982,15 @@ impl GridState {
                     b: (k * n / distfactor) as u8,
                 };
 
-                if x - xs + xp < 0 || y - ys + yp < 0 {
-                    continue;
-                }
-                let cell = self
-                    .grid
-                    .cart
-                    .get((y - ys + yp) as usize)
-                    .and_then(|v| v.get((x - xs + xp) as usize))
-                    .unwrap_or(&Cell::Wall);
+                let cell = if (y - ys + yp) < 0 || (x - xs + xp) < 0 {
+                    &Cell::Wall
+                } else {
+                    self.grid
+                        .cart
+                        .get((y - ys + yp) as usize)
+                        .and_then(|v| v.get((x - xs + xp) as usize))
+                        .unwrap_or(&Cell::Wall)
+                };
                 let col = match cell {
                     Cell::Player(n) => {
                         if self.player == *n as usize {
