@@ -2,11 +2,14 @@
 
 ## Where is the options page?
 
-The player options page for this game doesnt exist. You shouldn't need it, because there aren't any game-specific options and so your yaml just needs to contain your slot name and the game name, like so:
+The player options page for this game doesnt exist. You shouldn't need it, because there aren't any game-specific options (except one dummy option) and so your yaml just needs to contain your slot name, the game name, and the dummy option like so:
 
 ```yaml
 name: Minecart
 game: Advent of Code 2019 Day 18 Part 2
+
+Advent of Code 2019 Day 18 Part 2:
+  dummy: ""
 ```
 
 ## What does randomization do to this game?

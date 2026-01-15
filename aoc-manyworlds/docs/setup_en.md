@@ -14,19 +14,19 @@
 
 To join an Archipelago MultiWorld game, for example a multiworld hosted on `https://archipelago.gg:12345` where your slot name is `Minecart`:
 
-`aoc-manyworlds --url "https://archipelago.gg:12345" --slot "Minecart"`
+`aoc-manyworlds-archi --url "https://archipelago.gg:12345" --slot "Minecart"`
 
 If the game you are joining requires a password, for example `codekata`, you should also add the following to your flags:  
-`aoc-manyworlds --url "https://archipelago.gg:12345" --password "codekata" --slot "Minecart"`
+`aoc-manyworlds-archi --url "https://archipelago.gg:12345" --password "codekata" --slot "Minecart"`
 
 # Playing offline
 
 If the game is to be played offline in single-player mode, you should instead run as follows:  
-`aoc-manyworlds --singleplayer`
+`aoc-manyworlds-archi --singleplayer`
 
 Note that this will not create/join a multiworld whatsoever, and instead just use the game's native randomization.
 
 By default, the seed is picked at random. You can supply your own seed in this situation:
-`aoc-manyworlds --singleplayer --seed 123`
+`aoc-manyworlds-archi --singleplayer --seed 123`
 
 Keep in mind that this seed is separate from the multiworld seed. Using the same number for the multiworld seed will likely give you a different puzzle input.

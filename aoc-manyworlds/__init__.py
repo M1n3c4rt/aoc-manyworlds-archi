@@ -17,14 +17,24 @@ class AOCManyWorldsOptions(PerGameCommonOptions):
     dummy: FreeText
 
 class AOCManyWorldsWeb(WebWorld):
-    tutorials = [Tutorial(
-        "Multiworld Setup Guide",
-        "A guide to setting up Advent of Code 2019 Day 18 Part 2 for Multiworld.",
-        "English",
-        "setup_en.md",
-        "setup/en",
-        ["M1n3c4rt"]
-    )]
+    tutorials = [
+        Tutorial(
+            "Multiworld Setup Guide",
+            "A guide to setting up Advent of Code 2019 Day 18 Part 2 for Multiworld.",
+            "English",
+            "setup_en.md",
+            "setup/en",
+            ["M1n3c4rt"]
+        ),
+        Tutorial(
+            "Multiworld Setup Guide",
+            "A guide to setting up Advent of Code 2019 Day 18 Part 2 for Multiworld.",
+            "French",
+            "setup_fr.md",
+            "setup/fr",
+            ["#Guigui"]
+        )
+    ]
 
 class AOCManyWorldsWorld(World):
     game: str = "Advent of Code 2019 Day 18 Part 2"
