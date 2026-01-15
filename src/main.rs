@@ -686,7 +686,7 @@ fn rich_print(slot: &String, msg: RichPrint) -> Result<(), StrError> {
             }
         }
     }
-    execute!(stdout(), Print(" ".repeat((2000) as usize)),)?;
+    execute!(stdout(), Print(" ".repeat(2000)),)?;
     Ok(())
 }
 
