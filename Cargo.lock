@@ -23,6 +23,7 @@ dependencies = [
  "rand_chacha",
  "serde_json",
  "tokio",
+ "tungstenite",
 ]
 
 [[package]]
