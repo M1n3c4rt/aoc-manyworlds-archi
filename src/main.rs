@@ -65,11 +65,11 @@ async fn main() -> Result<(), StrError> {
     if argmap.contains_key("--help") {
         println!(concat!(
             "Join a multiworld:\n",
-            "aoc-manyworlds --url <url> [--password <password>] --slot <slot>\n\n",
+            "aoc-manyworlds-archi --url <url> [--password <password>] --slot <slot>\n\n",
             "Play without joining a multiworld:\n",
-            "aoc-manyworlds --singleplayer [--seed <seed>]\n\n",
+            "aoc-manyworlds-archi --singleplayer [--seed <seed>]\n\n",
             "Print help\n",
-            "aoc-manyworlds --help"
+            "aoc-manyworlds-archi --help"
         ));
     } else if argmap.contains_key("--singleplayer") {
         match argmap.get("--seed") {
@@ -91,7 +91,7 @@ async fn main() -> Result<(), StrError> {
         start_multiplayer(url.clone(), slot.clone(), password.map(|x| x.as_str())).await?;
     } else {
         return Err(StrError {
-            msg: "Invalid syntax. Try \"aoc-manyworlds --help\".".to_string(),
+            msg: "Invalid syntax. Try \"aoc-manyworlds-archi --help\".".to_string(),
         });
     }
     Ok(())
